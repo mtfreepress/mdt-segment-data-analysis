@@ -1,0 +1,24 @@
+{
+  "name": "mdt-segment-data-analysis",
+  "version": "1.0.0",
+  "description": "",
+  "main": "index.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/jolness1/mdt-segment-data-analysis.git"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "type": "commonjs",
+  "bugs": {
+    "url": "https://github.com/jolness1/mdt-segment-data-analysis/issues"
+  },
+  "homepage": "https://github.com/jolness1/mdt-segment-data-analysis#readme",
+  "dependencies": {
+    "mapshaper": "^0.6.112"
+  }
+}
