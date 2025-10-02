@@ -13,17 +13,20 @@ for input_file in output/merged_data/*.geojson; do
 
   for scale in 1000 100 10 1; do
     out_file="output/simplified_data/${base}-${scale}m.geojson"
-    # map scale -> percent string expected by mapshaper
-    case "$scale" in
-      1000) pct="10%" ;; 
-      100) pct="5%" ;;
-      10) pct="1%" ;;
-      1) pct="0.1%" ;;
-      *) pct="1%" ;;
-    esac
-    # Use Douglas-Peucker (dp) simplification algorithm with "keep-shapes" option to preserve topology
+    # Use mapshaper's interval simplification in meters. The 'interval' parameter
+    # specifies the minimum distance (in the coordinate units, here meters when
+    # using projected coordinates) between consecutive points after simplification.
+    # Keep 'keep-shapes' to preserve topology.
+    # Detect and skip Git LFS pointer files which are small text files starting
+    # with 'version https://git-lfs.github.com/spec/v1' instead of real GeoJSON.
+    # Feeding those to mapshaper causes a JSON parsing error.
+    if head -n1 "$input_file" | grep -q "^version https://git-lfs.github.com/spec/v1"; then
+      echo "Skipping LFS pointer file: $input_file — pull LFS contents (git lfs pull) to process this file"
+      continue
+    fi
+
     "$MAPSHAPER" "$input_file" \
-      -simplify dp "$pct" keep-shapes \
+      -simplify keep-shapes interval=${scale} \
       -o gj2008 precision=0.00001 "$out_file"
   done
 done
