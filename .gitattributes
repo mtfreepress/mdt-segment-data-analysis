@@ -18,4 +18,5 @@ data/Traffic_Yearly_Counts_2023/TYC_2023.json filter=lfs diff=lfs merge=lfs -tex
 raw-mdt-source-data/UNUSED_Traffic_Yearly_Counts_2024/Montana_Traffic_Yearly_Counts.shp filter=lfs diff=lfs merge=lfs -text
 /output/filtered_by_munipality/filtered_traffic_segments.geojson filter=lfs diff=lfs merge=lfs -text
 /output/merged_data/merged_traffic_lines.geojson filter=lfs diff=lfs merge=lfs -text
+output/filtered_by_municipality/*.geojson filter=lfs diff=lfs merge=lfs -text
 output/filtered_by_municipality/filtered_traffic_segments.geojson filter=lfs diff=lfs merge=lfs -text
