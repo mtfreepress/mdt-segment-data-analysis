@@ -51,7 +51,6 @@ Three-step pipeline provided via `run_scripts.sh` which runs
 - `raw_mdt_data/` contains data as it came from MDT directly
 - `data/` contains the state data we converted in to `GeoJSON` format for easier usage in python and data from [MTFP's Montana Atlas project](https://github.com/mtfreepress/montana-atlas)
 - `output/` contains the data output of our analysis and simplification scripts
-- 
 
 ## License
 
