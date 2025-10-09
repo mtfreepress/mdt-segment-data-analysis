@@ -54,7 +54,7 @@ Three-step pipeline provided via `run_scripts.sh` which runs
 
 ## License
 
-This project is distributed under the BSD 3-Clause License. See the `LICENSE` file for details.
+This project is distributed under the BSD 3-Clause License. See the [LICENSE](LICENSE) file for details.
 
 
 ## Methodology Notes:
