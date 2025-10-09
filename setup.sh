@@ -34,4 +34,7 @@ else
   npm install --save mapshaper
 fi
 
+echo "making other shell scripts executable"
+chmod +x simplify_geojson.sh run_scripts.sh
+
 echo "Setup complete. Activate the venv with: source $VENV_DIR/bin/activate"

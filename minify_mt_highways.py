@@ -1,51 +1,21 @@
-#!/usr/bin/env python3
-"""Produce a reduced highways file containing only simplified routes
-that are NOT represented in the merged traffic lines file.
-
-Matching logic:
-- Compare `CORRIDOR` from merged traffic features to `ROUTE_ID` in
-  simplified highways (strip any trailing letter from ROUTE_ID).
-- Compare `CORR_MP` to `BEG_REF_PT` and `CORR_ENDMP` to `END_REF_PT` by
-  rounding to 3 decimal places after converting ref pt strings like
-  '663+0.0150' to a numeric value 663.015 (we only need the 3-decimal
-  comparison). Also compare `SEC_LNT_MI` to `RECORD_LEN` rounded to 3
-  decimals.
-
-Output: `./output/mini_highways/mini_mt_highways-1m.json` containing only
-features from the simplified highways that did not match any merged
-traffic feature (keeps original properties/geometry unchanged).
-"""
-
 from __future__ import annotations
 
 import json
 import os
 import re
+from math import floor
 from typing import Dict
 
 
-# There are two similar folder names in the repo historically:
-# - output/simplified-data
-# - output/simplified_data
-# Prefer the one that exists to be robust.
-MERGED_CANDIDATES = [
-    os.path.join("output", "simplified-data", "merged_traffic_lines-1m.geojson"),
-    os.path.join("output", "simplified_data", "merged_traffic_lines-1m.geojson"),
-    os.path.join("output", "merged_data", "merged_traffic_lines-1m.geojson"),
-]
-SIMPLIFIED_CANDIDATES = [
-    os.path.join("data", "mt-highways-1m.geojson"),
-    os.path.join("data", "mt-highways-1m.json"),
-    os.path.join("data", "simplified-mt-highways.json"),
-]
+
+# single-file candidates
+merged_traffic_simplified = os.path.join("output", "simplified-data", "merged_traffic_lines-1m.geojson")
+on_system_routes = os.path.join("data", "mt-highways-1m.geojson")
 
 # pick a simplified input from candidates
 def find_simplified_input():
-    for p in SIMPLIFIED_CANDIDATES:
-        if os.path.exists(p):
-            return p
-    return SIMPLIFIED_CANDIDATES[0]
-# Geometry matching tunables
+    # repository structure is fixed; return the single simplified candidate
+    return on_system_routes
 # max distance (meters) between sampled simplified point and nearest merged point to consider "close"
 MAX_DISTANCE_M = 50.0
 # max bearing difference (degrees) to consider same direction
@@ -57,10 +27,8 @@ OUTPUT_FILE = os.path.join(OUTPUT_DIR, "mini_mt_highways-1m.json")
 
 
 def refpt_to_float(ref: str) -> float:
-    """Convert refpt like '663+0.0150' to numeric 663.015 (float).
+    # convert '663+0.0150' to numeric 663.015 (float).
 
-    If the input is already numeric-ish, try to cast.
-    """
     if ref is None:
         return 0.0
     # common format: '663+0.0150' or '000+0.0000'
@@ -77,7 +45,7 @@ def refpt_to_float(ref: str) -> float:
 
 
 def route_id_base(route_id: str) -> str:
-    """Strip trailing letter from ROUTE_ID like 'C000001A' -> 'C000001'"""
+    # strip trailing letter from ROUTE_ID like 'C000001A' -> 'C000001
     if not route_id:
         return ""
     # remove trailing alpha characters
@@ -164,8 +132,8 @@ def sample_points(coords, n=10):
 
 
 def build_merged_point_index(merged_features):
-    # Build a simple grid index (dict) mapping bin -> list of (lon, lat, bearing)
-    # Bin size is degrees; small enough to reduce candidates but coarse enough
+    # build simple grid index (dict) mapping bin -> list of (lon, lat, bearing)
+    # bin size is degrees; small enough to reduce candidates but coarse enough
     # to keep memory low.
     BIN_SIZE_DEG = 0.01  # ~1.1 km latitude
     from math import floor
@@ -203,7 +171,6 @@ def point_matches_index(lon, lat, br, index, max_dist_m=MAX_DISTANCE_M, max_bear
     # index is a dict with 'bins' and 'bin_size'
     bins = index.get("bins", {})
     bin_size = index.get("bin_size", 0.01)
-    from math import floor, ceil
 
     bx = int(floor(lon / bin_size))
     by = int(floor(lat / bin_size))
@@ -227,23 +194,19 @@ def point_matches_index(lon, lat, br, index, max_dist_m=MAX_DISTANCE_M, max_bear
 def main() -> None:
     os.makedirs(OUTPUT_DIR, exist_ok=True)
 
-    # pick the first existing merged file path
-    merged_path = None
-    for p in MERGED_CANDIDATES:
-        if os.path.exists(p):
-            merged_path = p
-            break
-    if merged_path is None:
-        raise FileNotFoundError(
-            f"Could not find merged traffic file; looked for: {MERGED_CANDIDATES}"
-        )
+    merged_path = merged_traffic_simplified
+    if not os.path.exists(merged_path):
+        merged_path = os.path.join("output", "simplified_data", "merged_traffic_lines-1m.geojson")
+         
+    if not os.path.exists(merged_path):
+        tried = [merged_traffic_simplified, merged_path]
+        raise FileNotFoundError(f"Could not find merged traffic file; tried: {tried}")
 
     merged = load_geojson(merged_path)
     simplified_path = find_simplified_input()
     simplified = load_geojson(simplified_path)
 
-    # Choose matching mode: 'geometry' for spatial matching, 'signed' for
-    # route-name matching (legacy).
+    # Choose matching mode: 'geometry' for spatial matching, 'signed' for route-name
     MODE = "geometry"
 
     merged_features = merged.get("features", [])
