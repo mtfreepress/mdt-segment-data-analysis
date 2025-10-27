@@ -1,402 +1,367 @@
+"""
+Calculate length-weighted average crash rates (per 100M VMT) for different road categories.
+
+Categories:
+1. All roads outside municipality limits
+2. Non-interstates outside municipality limits
+3. Interstates outside municipality limits
+4. All roads inside municipality limits
+5. Non-interstates inside municipality limits
+6. Interstates inside municipality limits
+
+Excludes Butte-Silver Bow and Anaconda-Deer Lodge (treated as outside municipalities).
+"""
+
 import json
-import csv
-import sys
-from pathlib import Path
-from shapely.geometry import shape
+from shapely.geometry import shape, LineString, MultiPolygon
 from shapely.ops import unary_union
-import argparse
+from typing import Dict, List, Tuple
 
 
-def load_geojson(filepath):
-    """Load and parse a GeoJSON file."""
-    try:
-        with open(filepath, 'r', encoding='utf-8') as f:
-            return json.load(f)
-    except FileNotFoundError:
-        print(f"Error: File {filepath} not found.")
-        sys.exit(1)
-    except json.JSONDecodeError as e:
-        print(f"Error parsing JSON from {filepath}: {e}")
-        sys.exit(1)
+def load_geojson(filepath: str) -> dict:
+    """Load a GeoJSON file."""
+    with open(filepath, 'r') as f:
+        return json.load(f)
 
 
-def create_municipal_exclusion_zones(municipalities_data):
+def calculate_line_length_miles(coordinates: List[List[float]]) -> float:
     """
-    Create a unified geometry of all municipal boundaries except for 
-    Anaconda-Deer Lodge and Butte-Silver Bow.
+    Calculate the length of a LineString in miles using Haversine formula.
+    Coordinates are in [lon, lat] format.
     """
-    exclusion_polygons = []
+    from math import radians, sin, cos, sqrt, atan2
     
-    for feature in municipalities_data['features']:
-        name = feature['properties'].get('NAME', '')
-        
-        # skip the two exceptions — unified county/city gov would exclude all roads in the county
-        if name in ['Anaconda-Deer Lodge', 'Butte-Silver Bow']:
-            print(f"Keeping segments within: {name}")
-            continue
-            
-        # convert geometry to shapely object
-        try:
-            geom = shape(feature['geometry'])
-            if not geom.is_valid:
-                print(f"Warning: Invalid geometry for municipality {name}, attempting to fix...")
-                # fix invalid geometry using buffer(0) — Billings, Bozeman, Troy, Whitefish etc. broken
-                geom = geom.buffer(0)
-                if geom.is_valid:
-                    print(f"Successfully fixed geometry for municipality {name}")
-                else:
-                    print(f"Could not fix geometry for municipality {name}, skipping")
-                    continue
-            
-            exclusion_polygons.append(geom)
-        except Exception as e:
-            print(f"Warning: Could not process geometry for municipality {name}: {e}")
-    
-    if not exclusion_polygons:
-        print("Warning: No valid exclusion zones found")
-        return None
-    
-    try:
-        exclusion_zone = unary_union(exclusion_polygons)
-        print(f"Created exclusion zone from {len(exclusion_polygons)} municipalities")
-        return exclusion_zone
-    except Exception as e:
-        print(f"Error creating exclusion zone: {e}")
-        return None
-
-
-def segment_intersects_exclusion_zone(segment_geom, exclusion_zone):
-    """Check if a road segment intersects with the exclusion zone."""
-    if exclusion_zone is None:
-        return False
-    
-    try:
-        # convert segment geometry to shapely LineString
-        line = shape(segment_geom)
-        
-        # check if the line intersects with the exclusion zone
-        return line.intersects(exclusion_zone)
-    except Exception as e:
-        print(f"Warning: Error checking intersection: {e}")
-        return False
-
-
-def filter_traffic_segments(traffic_data, exclusion_zone):
-    """Filter traffic segments to exclude those within municipal boundaries."""
-    filtered_features = []
-    excluded_count = 0
-    
-    for feature in traffic_data['features']:
-        segment_key = feature['properties'].get('SEGMENT_KEY', 'Unknown')
-        
-        intersects = segment_intersects_exclusion_zone(feature['geometry'], exclusion_zone)
-        if intersects:
-            excluded_count += 1
-            print(f"Excluding segment: {segment_key}")
-        else:
-            filtered_features.append(feature)
-    
-    print(f"Excluded {excluded_count} segments within municipal boundaries")
-    print(f"Kept {len(filtered_features)} segments outside municipal boundaries")
-    
-    return {
-        'type': 'FeatureCollection',
-        'features': filtered_features
-    }
-
-
-def calculate_weighted_average(filtered_data):
-    """Calculate SEC_LNT_MI weighted average of PER_100M_VMT."""
-    total_weighted_vmt = 0.0
     total_length = 0.0
+    for i in range(len(coordinates) - 1):
+        lon1, lat1 = coordinates[i]
+        lon2, lat2 = coordinates[i + 1]
+        
+        # haversine formula
+        R = 3958.8  # Earth's radius in miles
+        
+        lat1_rad = radians(lat1)
+        lat2_rad = radians(lat2)
+        delta_lat = radians(lat2 - lat1)
+        delta_lon = radians(lon2 - lon1)
+        
+        a = sin(delta_lat / 2) ** 2 + cos(lat1_rad) * cos(lat2_rad) * sin(delta_lon / 2) ** 2
+        c = 2 * atan2(sqrt(a), sqrt(1 - a))
+        
+        total_length += R * c
     
-    for feature in filtered_data['features']:
-        props = feature['properties']
+    return total_length
+
+
+def is_interstate(segment_key: str) -> bool:
+    """Check if a road segment is an interstate (has I- prefix)."""
+    dept_id = segment_key.split('_')[-1] if '_' in segment_key else ""
+    return dept_id.startswith('I-')
+
+
+def create_municipality_union(municipalities_geojson: dict) -> MultiPolygon:
+    """
+    Create a union of all municipality polygons, excluding Butte-Silver Bow and Anaconda-Deer Lodge.
+    """
+    polygons = []
+    excluded_names = ["Butte-Silver Bow", "Anaconda-Deer Lodge"]
+    
+    for feature in municipalities_geojson['features']:
+        name = feature['properties'].get('NAME', '')
+        if name not in excluded_names:
+            try:
+                geom = shape(feature['geometry'])
+                # attempt to fix invalid geometries (some municipal polys are broken)
+                if not geom.is_valid:
+                    geom = geom.buffer(0)
+                if geom.is_valid:
+                    polygons.append(geom)
+                else:
+                    print(f"Warning: Skipping invalid municipality geometry: {name}")
+            except Exception as e:
+                print(f"Warning: Could not process municipality {name}: {e}")
+    
+    print(f"Loaded {len(polygons)} municipalities (excluding Butte-Silver Bow and Anaconda-Deer Lodge)")
+    
+    # union of all municipality polygons
+    if polygons:
+        municipality_union = unary_union(polygons)
+        return municipality_union
+    return None
+
+
+def categorize_segments(traffic_geojson: dict, municipality_union) -> Dict[str, List[dict]]:
+    """
+    Categorize road segments based on location (in/out of municipalities) and type (interstate/non-interstate).
+    
+    Returns a dictionary with keys:
+    - 'all_outside'
+    - 'non_interstate_outside'
+    - 'interstate_outside'
+    - 'all_inside'
+    - 'non_interstate_inside'
+    - 'interstate_inside'
+    
+    Each value is a list of dicts with keys: 'length_miles', 'crash_rate'
+    """
+    categories = {
+        'all_outside': [],
+        'non_interstate_outside': [],
+        'interstate_outside': [],
+        'all_inside': [],
+        'non_interstate_inside': [],
+        'interstate_inside': []
+    }
+    
+    total_segments = len(traffic_geojson['features'])
+    print(f"\nProcessing {total_segments} road segments...")
+    
+    for idx, feature in enumerate(traffic_geojson['features']):
+        if idx % 1000 == 0:
+            print(f"  Processed {idx}/{total_segments} segments...")
+        
+        properties = feature['properties']
+        geometry = feature['geometry']
+        
+        # skip if missing required data
+        if 'PER_100M_VMT' not in properties or properties['PER_100M_VMT'] is None:
+            continue
         
         try:
-            sec_lnt_mi = float(props.get('SEC_LNT_MI', 0))
-            per_100m_vmt = float(props.get('PER_100M_VMT', 0))
-            
-            if sec_lnt_mi > 0 and per_100m_vmt > 0:
-                total_weighted_vmt += sec_lnt_mi * per_100m_vmt
-                total_length += sec_lnt_mi
-        except (ValueError, TypeError) as e:
-            segment_key = props.get('SEGMENT_KEY', 'Unknown')
-            print(f"Warning: Invalid numeric data for segment {segment_key}: {e}")
-    
-    if total_length > 0:
-        weighted_average = total_weighted_vmt / total_length
-        return weighted_average, total_length
-    else:
-        return 0.0, 0.0
-
-
-def calculate_vmt_weighted_average(filtered_data):
-    """Calculate VMT-weighted average of PER_100M_VMT using weight = SEC_LNT_MI * AADT.
-
-    Returns (vmt_weighted_average, total_vmt_weight)
-    """
-    aadt_keys = ("TYC_AADT", "AADT", "AVG_AADT", "TYC_AADT_EST", "EST_AADT")
-    total_weighted = 0.0
-    total_vmt_weight = 0.0
-
-    for feature in filtered_data['features']:
-        props = feature['properties']
-        try:
-            sec_lnt_mi = float(props.get('SEC_LNT_MI', 0))
-            per_100m_vmt = float(props.get('PER_100M_VMT', 0))
-
-            # find an AADT-like value
-            aadt = 0.0
-            for k in aadt_keys:
-                val = props.get(k)
-                if val is None:
-                    continue
-                try:
-                    aadt = float(val)
-                    if aadt > 0:
-                        break
-                except (ValueError, TypeError):
-                    continue
-
-            if sec_lnt_mi > 0 and per_100m_vmt > 0 and aadt > 0:
-                weight = sec_lnt_mi * aadt
-                total_weighted += per_100m_vmt * weight
-                total_vmt_weight += weight
+            crash_rate = float(properties['PER_100M_VMT'])
         except (ValueError, TypeError):
-            segment_key = props.get('SEGMENT_KEY', 'Unknown')
-            print(f"Warning: Invalid numeric data for segment {segment_key} in VMT weighting")
+            continue  # skip segments with invalid crash rate data
 
-    if total_vmt_weight > 0:
-        return total_weighted / total_vmt_weight, total_vmt_weight
-    return 0.0, 0.0
+        segment_key = properties.get('SEGMENT_KEY', '')
 
-
-def calculate_vmt_interstate_noninterstate(filtered_data):
-    """Calculate VMT-weighted averages separately for interstate and non-interstate."""
-    aadt_keys = ("TYC_AADT", "AADT", "AVG_AADT", "TYC_AADT_EST", "EST_AADT")
-    interstate_weighted = 0.0
-    interstate_weight = 0.0
-    noninter_weighted = 0.0
-    noninter_weight = 0.0
-
-    for feature in filtered_data['features']:
-        props = feature['properties']
+        # prefer SEC_LNT_MI (official segment length) when present, otherwise fall back to geometry
+        length_miles = None
+        sec_lnt_val = None
         try:
-            sec_lnt_mi = float(props.get('SEC_LNT_MI', 0))
-            per_100m_vmt = float(props.get('PER_100M_VMT', 0))
-            route = (props.get('SIGNED_ROUTE', '') or '')
+            sec_lnt = properties.get('SEC_LNT_MI')
+            if sec_lnt is not None and str(sec_lnt).strip() != '':
+                sec_lnt_val = float(sec_lnt)
+                length_miles = sec_lnt_val
+        except (ValueError, TypeError):
+            sec_lnt_val = None
+            length_miles = None
 
-            aadt = 0.0
-            for k in aadt_keys:
-                val = props.get(k)
-                if val is None:
-                    continue
-                try:
-                    aadt = float(val)
-                    if aadt > 0:
-                        break
-                except (ValueError, TypeError):
-                    continue
+        # ff no valid SEC_LNT_MI, compute from geometry
+        if length_miles is None:
+            if geometry['type'] == 'LineString':
+                length_miles = calculate_line_length_miles(geometry['coordinates'])
+            else:
+                continue  # skip non-LineString geometries
 
-            if sec_lnt_mi <= 0 or per_100m_vmt <= 0 or aadt <= 0:
+        # determine if interstate: prefer SIGNED_ROUTE if available, otherwise fall back to SEGMENT_KEY parsing
+        signed_route = (properties.get('SIGNED_ROUTE') or '')
+        if signed_route and str(signed_route).startswith('I-'):
+            is_i = True
+        else:
+            is_i = is_interstate(segment_key)
+
+        line_geom = shape(geometry)
+        is_inside = False
+        
+        if municipality_union:
+            try:
+                is_inside = line_geom.intersects(municipality_union)
+            except Exception as e:
+                print(f"Warning: Error checking intersection for segment {segment_key}: {e}")
+                is_inside = False
+        
+        if crash_rate <= 0:
+            continue
+
+        total_crashes = 0
+        for crash_key in ('TOTAL_CRASHES', 'TOTAL', 'TOTAL_CRASHES_5YR', 'TOTAL_CRASH'):
+            val = properties.get(crash_key)
+            if val is None:
+                continue
+            try:
+                total_crashes = int(float(val))
+                break
+            except (ValueError, TypeError):
                 continue
 
-            weight = sec_lnt_mi * aadt
-            if str(route).startswith('I-'):
-                interstate_weighted += per_100m_vmt * weight
-                interstate_weight += weight
+        # find AADT-like value
+        aadt = 0.0
+        for k in ("TYC_AADT", "AADT", "AVG_AADT", "TYC_AADT_EST", "EST_AADT"):
+            v = properties.get(k)
+            if v is None:
+                continue
+            try:
+                aadt = float(v)
+                if aadt > 0:
+                    break
+            except (ValueError, TypeError):
+                continue
+
+        # use SEC_LNT_MI for VMT calculation when available, otherwise fall back to computed length_miles
+        sec_len_for_vmt = sec_lnt_val if sec_lnt_val is not None else length_miles
+        daily_vmt = sec_len_for_vmt * aadt if (sec_len_for_vmt is not None and aadt > 0) else 0.0
+
+        # create segment data
+        segment_data = {
+            'length_miles': length_miles,
+            'crash_rate': crash_rate,
+            'segment_key': segment_key,
+            'total_crashes': total_crashes,
+            'daily_vmt': daily_vmt
+        }
+
+        # categorize
+        if is_inside:
+            categories['all_inside'].append(segment_data)
+            if is_i:
+                categories['interstate_inside'].append(segment_data)
             else:
-                noninter_weighted += per_100m_vmt * weight
-                noninter_weight += weight
+                categories['non_interstate_inside'].append(segment_data)
+        else:
+            categories['all_outside'].append(segment_data)
+            if is_i:
+                categories['interstate_outside'].append(segment_data)
+            else:
+                categories['non_interstate_outside'].append(segment_data)
+    
+    print(f"  Processed {total_segments}/{total_segments} segments.")
+    
+    return categories
 
-        except (ValueError, TypeError):
-            continue
 
-    interstate_avg = (interstate_weighted / interstate_weight) if interstate_weight > 0 else 0.0
-    noninter_avg = (noninter_weighted / noninter_weight) if noninter_weight > 0 else 0.0
-    return interstate_avg, noninter_avg, interstate_weight, noninter_weight
-
-
-def calculate_interstate_weighted_average(filtered_data):
-    """Calculate weighted average but only for routes with SIGNED_ROUTE starting with 'I-'."""
-    total_weighted_vmt = 0.0
+def calculate_weighted_average(segments: List[dict]) -> Tuple[float, float, float]:
+    if not segments:
+        return 0.0, 0.0, 0.0
+    
+    total_weighted_rate = 0.0
     total_length = 0.0
-
-    for feature in filtered_data['features']:
-        props = feature['properties']
-        route = props.get('SIGNED_ROUTE', '') or ''
-        if not str(route).startswith('I-'):
-            continue
-
-        try:
-            sec_lnt_mi = float(props.get('SEC_LNT_MI', 0))
-            per_100m_vmt = float(props.get('PER_100M_VMT', 0))
-
-            if sec_lnt_mi > 0 and per_100m_vmt > 0:
-                total_weighted_vmt += sec_lnt_mi * per_100m_vmt
-                total_length += sec_lnt_mi
-        except (ValueError, TypeError):
-            # ignore malformed numeric values for this calculation
-            continue
-
-    if total_length > 0:
-        return total_weighted_vmt / total_length
-    return 0.0
-
-
-def calculate_noninterstate_weighted_average(filtered_data):
-    """Calculate weighted average for routes that do NOT start with 'I-'."""
-    total_weighted_vmt = 0.0
-    total_length = 0.0
-
-    for feature in filtered_data['features']:
-        props = feature['properties']
-        route = (props.get('SIGNED_ROUTE', '') or '')
-        # treat empty/unknown routes as non-interstate only if they are explicit non-I values
-        if str(route).startswith('I-'):
-            continue
-
-        try:
-            sec_lnt_mi = float(props.get('SEC_LNT_MI', 0))
-            per_100m_vmt = float(props.get('PER_100M_VMT', 0))
-
-            if sec_lnt_mi > 0 and per_100m_vmt > 0:
-                total_weighted_vmt += sec_lnt_mi * per_100m_vmt
-                total_length += sec_lnt_mi
-        except (ValueError, TypeError):
-            continue
-
-    if total_length > 0:
-        return total_weighted_vmt / total_length
-    return 0.0
-
-
-def save_filtered_geojson(filtered_data, output_path):
-    """Save filtered data as GeoJSON."""
-    try:
-        with open(output_path, 'w', encoding='utf-8') as f:
-            json.dump(filtered_data, f, indent=2)
-        print(f"Saved filtered GeoJSON to: {output_path}")
-    except Exception as e:
-        print(f"Error saving GeoJSON: {e}")
-
-
-def save_properties_csv(filtered_data, output_path):
-    """Save properties (without geometry) as CSV."""
-    try:
-        if not filtered_data['features']:
-            print("Warning: No features to save to CSV")
-            return
+    
+    for segment in segments:
+        length = segment['length_miles']
+        rate = segment['crash_rate']
         
-        # get all unique property keys
-        all_keys = set()
-        for feature in filtered_data['features']:
-            all_keys.update(feature['properties'].keys())
-        
-        fieldnames = sorted(list(all_keys))
-        
-        with open(output_path, 'w', newline='', encoding='utf-8') as f:
-            writer = csv.DictWriter(f, fieldnames=fieldnames)
-            writer.writeheader()
-            
-            for feature in filtered_data['features']:
-                writer.writerow(feature['properties'])
-        
-        print(f"Saved properties CSV to: {output_path}")
-    except Exception as e:
-        print(f"Error saving CSV: {e}")
+        total_weighted_rate += rate * length
+        total_length += length
+    
+    if total_length == 0:
+        return 0.0, 0.0, 0.0
+    
+    weighted_avg = total_weighted_rate / total_length
+    
+    miles_per_crash = 100_000_000 / weighted_avg if weighted_avg > 0 else float('inf')
+    
+    return weighted_avg, total_length, miles_per_crash
 
 
 def main():
-    parser = argparse.ArgumentParser(description='Filter traffic segments and calculate weighted averages')
-    parser.add_argument('--municipalities', default='data/mt-municipalities-1m.geojson',
-                       help='Path to municipalities GeoJSON file')
-    parser.add_argument('--traffic', default='output/merged_data/merged_traffic_lines.geojson',
-                       help='Path to traffic segments GeoJSON file')
-    parser.add_argument('--output-dir', default='output/filtered_by_municipality',
-                       help='Output directory for results')
+    # load data
+    print("Loading GeoJSON files...")
+    traffic_data = load_geojson('output/merged_data/merged_traffic_lines.geojson')
+    municipalities_data = load_geojson('data/mt-municipalities-1m.geojson')
     
-    args = parser.parse_args()
+    print("\nCreating municipality boundary union...")
+    municipality_union = create_municipality_union(municipalities_data)
+    categories = categorize_segments(traffic_data, municipality_union)
+    print("\n" + "="*80)
+    print("LENGTH-WEIGHTED AVERAGE CRASH RATES BY CATEGORY")
+    print("="*80)
+    
+    category_names = {
+        'all_outside': '1. All roads OUTSIDE municipality limits',
+        'non_interstate_outside': '2. Non-interstates OUTSIDE municipality limits',
+        'interstate_outside': '3. Interstates OUTSIDE municipality limits',
+        'all_inside': '4. All roads INSIDE municipality limits',
+        'non_interstate_inside': '5. Non-interstates INSIDE municipality limits',
+        'interstate_inside': '6. Interstates INSIDE municipality limits'
+    }
+    
+    results = {}
 
-    # ensure output directory exists - create if needed
-    output_dir = Path(args.output_dir)
-    output_dir.mkdir(parents=True, exist_ok=True)
-    
-    print("Loading municipalities data...")
-    municipalities_data = load_geojson(args.municipalities)
-    
-    print("Loading traffic segments data...")
-    traffic_data = load_geojson(args.traffic)
-    
-    print("Creating municipal exclusion zones...")
-    exclusion_zone = create_municipal_exclusion_zones(municipalities_data)
-    
-    print("Filtering traffic segments...")
-    filtered_data = filter_traffic_segments(traffic_data, exclusion_zone)
-    
-    print("Calculating weighted average...")
-    weighted_avg, total_length = calculate_weighted_average(filtered_data)
-    vmt_avg, total_vmt_weight = calculate_vmt_weighted_average(filtered_data)
-    vmt_interstate_avg, vmt_noninter_avg, vmt_inter_weight, vmt_noninter_weight = calculate_vmt_interstate_noninterstate(filtered_data)
-    
-    # print results to console
+    for key, name in category_names.items():
+        segments = categories[key]
+        avg_rate, total_length, miles_per_crash = calculate_weighted_average(segments)
+        results[key] = (avg_rate, total_length, miles_per_crash)
+
+        print("\n" + name)
+        print("  Number of segments: {}".format(len(segments)))
+        # compute totals: total accidents and total daily miles
+        total_accidents = sum(int(s.get('total_crashes', 0)) for s in segments)
+        total_daily_miles = sum(float(s.get('daily_vmt', 0.0)) for s in segments)
+        print(f"  Total accidents: {total_accidents:,}")
+        print(f"  Total daily miles: {total_daily_miles:,.0f}")
+        print(f"  Total road miles: {total_length:,.2f}")
+        print(f"  Weighted avg crash rate: {avg_rate:.2f} per 100M VMT")
+        if miles_per_crash != float('inf'):
+            print(f"  Expected miles per crash: {miles_per_crash:,.0f} miles")
+        else:
+            print("  Expected miles per crash: N/A (no crashes)")
+
+    # ------------------------------------------------------------------
+    # Aggregate across ALL roads (ignore municipality split)
+    # ------------------------------------------------------------------
+    all_segments = categories['all_outside'] + categories['all_inside']
+    all_avg_rate, all_total_length, all_miles_per_crash = calculate_weighted_average(all_segments)
+    all_total_accidents = sum(int(s.get('total_crashes', 0)) for s in all_segments)
+    all_total_daily_miles = sum(float(s.get('daily_vmt', 0.0)) for s in all_segments)
+
     print("\n" + "="*60)
-    print("RESULTS")
+    print("ALL ROADS (no municipality split)")
     print("="*60)
-    print(f"Total segments after filtering: {len(filtered_data['features'])}")
-    # console print order:
-    print(f"Total road length (miles): {total_length:.2f}")
-    print(f"SEC_LNT_MI weighted average PER_100M_VMT: {weighted_avg:.2f}")
-    interstate_avg = calculate_interstate_weighted_average(filtered_data)
-    print(f"Interstate Crash rate avg: {interstate_avg:.2f}")
-    noninterstate_avg = calculate_noninterstate_weighted_average(filtered_data)
-    print(f"Non-Interstate Crash rate avg: {noninterstate_avg:.2f}")
-    print(f"VMT (SEC_LNT_MI * AADT) weighted average PER_100M_VMT: {vmt_avg:.2f}")
-    print(f"VMT Interstate Crash rate avg: {vmt_interstate_avg:.2f}")
-    print(f"VMT Non-Interstate Crash rate avg: {vmt_noninter_avg:.2f}")
-    print("="*60)
+    print(f"  Number of segments: {len(all_segments)}")
+    print(f"  Total accidents: {all_total_accidents:,}")
+    print(f"  Total daily miles: {all_total_daily_miles:,.0f}")
+    print(f"  Total road miles: {all_total_length:,.2f}")
+    print(f"  Weighted avg crash rate: {all_avg_rate:.2f} per 100M VMT")
+    if all_miles_per_crash != float('inf'):
+        print(f"  Expected miles per crash: {all_miles_per_crash:,.0f} miles")
+    else:
+        print("  Expected miles per crash: N/A (no crashes)")
     
-    # outputs
-    geojson_output = output_dir / 'filtered_traffic_segments.geojson'
-    csv_output = output_dir / 'filtered_traffic_properties.csv'
+    # summary
+    print("\n" + "="*80)
+    print("SUMMARY COMPARISON")
+    print("="*80)
     
-    save_filtered_geojson(filtered_data, geojson_output)
-    save_properties_csv(filtered_data, csv_output)
+    outside_all = results['all_outside']
+    inside_all = results['all_inside']
+
+    print("\nOUTSIDE municipalities:")
+    print(f"  Total miles: {outside_all[1]:,.2f}")
+    print(f"  Crash rate: {outside_all[0]:.2f} per 100M VMT")
+    print(f"  Miles per crash: {outside_all[2]:,.0f}")
     
-    # save stats
-    summary_output = output_dir / 'traffic_analysis_summary.txt'
-    try:
-        with open(summary_output, 'w', encoding='utf-8') as f:
-            f.write("Traffic Segment Analysis Summary\n")
-            f.write("="*40 + "\n\n")
-            f.write(f"Total segments after filtering: {len(filtered_data['features'])}\n")
-            f.write(f"Total road length (miles): {total_length:.2f}\n")
-            f.write(f"SEC_LNT_MI weighted average PER_100M_VMT: {weighted_avg:.2f}\n")
-            f.write(f"Interstate Crash rate avg: {interstate_avg:.2f}\n")
-            f.write(f"Non-Interstate Crash rate avg: {noninterstate_avg:.2f}\n")
-            f.write(f"VMT (SEC_LNT_MI * AADT) weighted average PER_100M_VMT: {vmt_avg:.2f}\n")
-            f.write(f"VMT Interstate Crash rate avg: {vmt_interstate_avg:.2f}\n")
-            f.write(f"VMT Non-Interstate Crash rate avg: {vmt_noninter_avg:.2f}\n")
-            f.write("\nExcluded municipalities (segments within these areas were removed):\n")
-            
-            excluded_munis = []
-            for feature in municipalities_data['features']:
-                name = feature['properties'].get('NAME', '')
-                if name not in ['Anaconda-Deer Lodge', 'Butte-Silver Bow']:
-                    excluded_munis.append(name)
-            
-            for name in sorted(excluded_munis):
-                f.write(f"  - {name}\n")
-            
-            f.write("\nIncluded municipalities (segments within these areas were kept):\n")
-            f.write("  - Anaconda-Deer Lodge\n")
-            f.write("  - Butte-Silver Bow\n")
-        
-        print(f"Saved analysis summary to: {summary_output}")
-    except Exception as e:
-        print(f"Error saving summary: {e}")
+    print("\nINSIDE municipalities:")
+    print(f"  Total miles: {inside_all[1]:,.2f}")
+    print(f"  Crash rate: {inside_all[0]:.2f} per 100M VMT")
+    print(f"  Miles per crash: {inside_all[2]:,.0f}")
+    
+    if inside_all[0] > 0 and outside_all[0] > 0:
+        ratio = inside_all[0] / outside_all[0]
+        print(f"\nCrash rate ratio (inside/outside): {ratio:.2f}x")
+        if ratio > 1:
+            print(f"  → Roads inside municipalities have {ratio:.1f}x HIGHER crash rates")
+        else:
+            print(f"  → Roads inside municipalities have {1/ratio:.1f}x LOWER crash rates")
+    
+    # Interstate vs Non-Interstate comparison
+    print("\n" + "-"*80)
+    print("INTERSTATE vs NON-INTERSTATE COMPARISON (Outside municipalities)")
+    print("-"*80)
+    
+    interstate_out = results['interstate_outside']
+    non_interstate_out = results['non_interstate_outside']
+    
+    print("\nInterstates:")
+    print(f"  Crash rate: {interstate_out[0]:.2f} per 100M VMT")
+    print(f"  Miles per crash: {interstate_out[2]:,.0f}")
+    
+    print("\nNon-interstates:")
+    print(f"  Crash rate: {non_interstate_out[0]:.2f} per 100M VMT")
+    print(f"  Miles per crash: {non_interstate_out[2]:,.0f}")
+    
+    if non_interstate_out[0] > 0 and interstate_out[0] > 0:
+        ratio = non_interstate_out[0] / interstate_out[0]
+        print(f"\nCrash rate ratio (non-interstate/interstate): {ratio:.2f}x")
 
 
-if __name__ == "__main__":
+if __name__ == '__main__':
     main()
