@@ -24,7 +24,8 @@ def load_base_segments_2023(base_csv='data/Traffic_Yearly_Counts_2023/TYC_2023.c
     df = pd.read_csv(base_csv, dtype=str)
     df['CORR_ID'] = df['CORR_ID'].astype(str).str.strip().str.upper()
     df['DEPT_ID'] = df['DEPT_ID'].astype(str).str.strip().str.upper()
-    df['SEGMENT_KEY'] = (df['CORR_ID'] + '_' + df['CORR_MP'] + '_' + df['CORR_ENDMP'] + '_' + df['DEPT_ID'])
+    df['SEGMENT_KEY'] = (df['CORR_ID'] + '_' + df['CORR_MP'] +
+                         '_' + df['CORR_ENDMP'] + '_' + df['DEPT_ID'])
     df['CORR_MP_FLOAT'] = df['CORR_MP'].apply(parse_milepost)
     df['CORR_ENDMP_FLOAT'] = df['CORR_ENDMP'].apply(parse_milepost)
     df['TYC_AADT'] = pd.to_numeric(df.get('TYC_AADT', ''), errors='coerce')
@@ -44,21 +45,27 @@ def calculate_averaged_traffic(base_df, years=[2023, 2022, 2021, 2020, 2019]):
         ydf = pd.read_csv(csv_path, dtype=str)
         ydf['CORR_ID'] = ydf['CORR_ID'].astype(str).str.strip().str.upper()
         ydf['DEPT_ID'] = ydf['DEPT_ID'].astype(str).str.strip().str.upper()
-        ydf['SEGMENT_KEY'] = (ydf['CORR_ID'] + '_' + ydf['CORR_MP'] + '_' + ydf['CORR_ENDMP'] + '_' + ydf['DEPT_ID'])
-        ydf['TYC_AADT'] = pd.to_numeric(ydf.get('TYC_AADT', ''), errors='coerce')
+        ydf['SEGMENT_KEY'] = (ydf['CORR_ID'] + '_' + ydf['CORR_MP'] +
+                              '_' + ydf['CORR_ENDMP'] + '_' + ydf['DEPT_ID'])
+        ydf['TYC_AADT'] = pd.to_numeric(
+            ydf.get('TYC_AADT', ''), errors='coerce')
         parts.append(ydf[['SEGMENT_KEY', 'TYC_AADT']])
 
     if not parts:
         return base_df
 
     all_years = pd.concat(parts, ignore_index=True)
-    agg = all_years.groupby('SEGMENT_KEY', sort=False)['TYC_AADT'].agg(['mean', 'count']).rename(columns={'mean': 'TYC_AADT_MEAN', 'count': 'YEARS_WITH_DATA'}).reset_index()
+    agg = all_years.groupby('SEGMENT_KEY', sort=False)['TYC_AADT'].agg(['mean', 'count']).rename(
+        columns={'mean': 'TYC_AADT_MEAN', 'count': 'YEARS_WITH_DATA'}).reset_index()
 
     merged = base_df.merge(agg, on='SEGMENT_KEY', how='left')
-    merged['TYC_AADT'] = merged['TYC_AADT_MEAN'].where(merged['TYC_AADT_MEAN'].notna(), merged['TYC_AADT'])
+    merged['TYC_AADT'] = merged['TYC_AADT_MEAN'].where(
+        merged['TYC_AADT_MEAN'].notna(), merged['TYC_AADT'])
     if 'YEARS_WITH_DATA' in merged.columns:
-        merged['YEARS_WITH_DATA'] = merged['YEARS_WITH_DATA'].fillna(1).astype(int)
-    merged = merged.drop(columns=[c for c in ('TYC_AADT_MEAN',) if c in merged.columns])
+        merged['YEARS_WITH_DATA'] = merged['YEARS_WITH_DATA'].fillna(
+            1).astype(int)
+    merged = merged.drop(columns=[c for c in (
+        'TYC_AADT_MEAN',) if c in merged.columns])
     return merged
 
 
@@ -71,7 +78,8 @@ def build_corridor_index(segments_df):
         b = r.get('CORR_ENDMP_FLOAT')
         if a is None or b is None:
             continue
-        temp.setdefault(corr, []).append((float(a), float(b), r['SEGMENT_KEY']))
+        temp.setdefault(corr, []).append(
+            (float(a), float(b), r['SEGMENT_KEY']))
 
     corridor_index = {}
     for corr, intervals in temp.items():
@@ -187,7 +195,8 @@ def load_on_system_routes_map(csv_path='raw-mdt-source-data/Montana_On_System_Ro
     mapping = {}
     # column names in the file: 'DEPARTMENTAL ROUTE' and 'SIGNED ROUTE'
     for _, r in rdf.iterrows():
-        dep = r.get('DEPARTMENTAL ROUTE') or r.get('DEPARTMENTAL ROUTE'.upper())
+        dep = r.get('DEPARTMENTAL ROUTE') or r.get(
+            'DEPARTMENTAL ROUTE'.upper())
         signed = r.get('SIGNED ROUTE') or r.get('SIGNED ROUTE'.upper())
         if pd.isna(dep):
             continue
@@ -253,41 +262,49 @@ def main(crash_csv='raw-mdt-source-data/2019-2023-crash-data.csv', years=[2023, 
     on_system_map = load_on_system_routes_map()
 
     crashes = pd.read_csv(crash_csv, dtype=str)
-    crashes['CORRIDOR'] = crashes['CORRIDOR'].astype(str).str.strip().str.upper()
+    crashes['CORRIDOR'] = crashes['CORRIDOR'].astype(
+        str).str.strip().str.upper()
 
     matched_series = match_crash_to_section_vectorized(crashes, corridor_index)
     crash_counts = matched_series.dropna().value_counts().to_dict()
 
     # compute metrics
     df = averaged.copy()
-    df['SEC_LNT_MI'] = pd.to_numeric(df.get('SEC_LNT_MI', None), errors='coerce')
+    df['SEC_LNT_MI'] = pd.to_numeric(
+        df.get('SEC_LNT_MI', None), errors='coerce')
     df['TYC_AADT'] = pd.to_numeric(df.get('TYC_AADT', None), errors='coerce')
     df['MILES_DRIVEN'] = df['SEC_LNT_MI'] * df['TYC_AADT']
     total_years = len(years)
-    df['TOTAL_CRASHES'] = df['SEGMENT_KEY'].map(crash_counts).fillna(0).astype(int)
+    df['TOTAL_CRASHES'] = df['SEGMENT_KEY'].map(
+        crash_counts).fillna(0).astype(int)
     df['AVG_CRASHES'] = df['TOTAL_CRASHES'] / total_years
-    # 365.20 instead of .25 because of leap years in 5-year span. 
+    # TODO: change this if the year range changes
+    # 365.20 instead of .25 because there is 1 leap year in the 5-year span we looked at (2019-2023, only 2020 was a leap year).
     df['ANNUAL_VMT'] = df['MILES_DRIVEN'] * 365.20
     df['PER_100M_VMT'] = None
     mask = df['ANNUAL_VMT'].notna() & (df['ANNUAL_VMT'] > 0)
-    df.loc[mask, 'PER_100M_VMT'] = (df.loc[mask, 'AVG_CRASHES'] / df.loc[mask, 'ANNUAL_VMT']) * 100_000_000
+    df.loc[mask, 'PER_100M_VMT'] = (
+        df.loc[mask, 'AVG_CRASHES'] / df.loc[mask, 'ANNUAL_VMT']) * 100_000_000
 
     # load geometries lazily: only for needed segment keys
 
     # filter low-volume segments and departmental prefixes (exclude R, L, X, U)
     filtered = df.copy()
-    filtered['TYC_AADT_NUM'] = pd.to_numeric(filtered.get('TYC_AADT', ''), errors='coerce')
+    filtered['TYC_AADT_NUM'] = pd.to_numeric(
+        filtered.get('TYC_AADT', ''), errors='coerce')
     filtered = filtered[filtered['TYC_AADT_NUM'] >= 1]
     depts_exclude = ('R', 'L', 'X', 'U')
     dept_upper = filtered['DEPT_ID'].astype(str).str.strip().str.upper()
     # exclude prefixes R/L/X/U but explicitly keep a small list of U- routes
     keep_u_routes = ['U-5832', 'U-8133', 'U-1216', 'U-602', 'U-8135']
-    exclude_mask = dept_upper.str.startswith(depts_exclude, na=False) & (~dept_upper.isin([s.upper() for s in keep_u_routes]))
+    exclude_mask = dept_upper.str.startswith(depts_exclude, na=False) & (
+        ~dept_upper.isin([s.upper() for s in keep_u_routes]))
     before_count = len(filtered)
     filtered = filtered[~exclude_mask]
     removed = before_count - len(filtered)
     if removed > 0:
-        print(f"Filtered out {removed} segments because DEPT_ID starts with {', '.join(depts_exclude)} (kept {', '.join(keep_u_routes)})")
+        print(
+            f"Filtered out {removed} segments because DEPT_ID starts with {', '.join(depts_exclude)} (kept {', '.join(keep_u_routes)})")
 
     needed_keys = set(filtered['SEGMENT_KEY'].tolist())
     geo_map = load_tyc_geojson_map(years, needed_keys=needed_keys)
@@ -319,7 +336,8 @@ def main(crash_csv='raw-mdt-source-data/2019-2023-crash-data.csv', years=[2023, 
             'PER_100M_VMT': float(row.get('PER_100M_VMT')) if pd.notna(row.get('PER_100M_VMT')) else '',
             'TYC_AADT': int(row['TYC_AADT']) if pd.notna(row.get('TYC_AADT')) and float(row['TYC_AADT']).is_integer() else (float(row['TYC_AADT']) if pd.notna(row.get('TYC_AADT')) else ''),
         }
-        lines.append({'type': 'Feature', 'geometry': geom, 'properties': props})
+        lines.append(
+            {'type': 'Feature', 'geometry': geom, 'properties': props})
 
     lines_gc = {'type': 'FeatureCollection', 'features': lines}
     with open(os.path.join(out_dir, 'merged_traffic_lines.geojson'), 'w') as lf:
@@ -329,7 +347,8 @@ def main(crash_csv='raw-mdt-source-data/2019-2023-crash-data.csv', years=[2023, 
     if lines:
         # preserve property keys (SIGNED_ROUTE included)
         lines_df = pd.DataFrame([feature['properties'] for feature in lines])
-        lines_df.to_csv(os.path.join(out_dir, 'merged_traffic_lines.csv'), index=False)
+        lines_df.to_csv(os.path.join(
+            out_dir, 'merged_traffic_lines.csv'), index=False)
 
     print(f"Wrote {len(lines)} lines to {out_dir}")
 
