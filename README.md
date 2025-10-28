@@ -35,7 +35,7 @@ Three-step pipeline provided via `run_scripts.sh` which runs
 - Shell script that uses `mapshaper` to simplify GeoJSON files for mapping `simplify_GeoJSON.sh`:
 
 ```bash
-# Make sure you have run setup.sh or made this executable with `chmod + x` and created a .venv manually
+# Make sure you have run setup.sh or made this file executable with `chmod +x ./run_scripts.sh` and created a .venv manually
 ./run_scripts.sh
 ```
 
@@ -62,7 +62,8 @@ Note: Ananconda Deer Lodge
 ## Project structure
 - `raw_mdt_data/` contains data as it came from MDT directly
 - `data/` contains the state data we converted in to `GeoJSON` format for easier usage in python and data from [MTFP's Montana Atlas project](https://github.com/mtfreepress/montana-atlas)
-- `output/` contains the data output of our analysis and simplification scripts
+- `output/` contains the data output of our analysis and simplification script
+- `resources/` contains the "Highway Safety Improvement Manual" as a PDF just in case™ it gets deleted from the US DOT's website  
 
 ## License
 
@@ -71,10 +72,12 @@ This project is distributed under the BSD 3-Clause License. See the [LICENSE](LI
 
 ## Methodology Notes:
 
-Because MDT provides its data in a format meant for engineers (a shapefile), we converted it into more accessible formats, GeoJSON and CSV, so it could be more easily processed in the Python script we wrote. That Python script connected each recorded crash to the correct stretch of road using “corridor” numbers and milepost makers, which are unique identifiers used by the state in both of its traffic and crash databases. 
+Because MDT provides its data in a format meant for traffic engineers (a shapefile), we converted it into more accessible formats, GeoJSON and CSV, so it could be more easily processed in the Python script we wrote. That Python script connected each recorded crash to the correct stretch of road using “corridor” numbers and milepost makers, which are unique identifiers used by the state in both of its traffic and crash databases. 
 
-For traffic numbers we took care to get as accurate a representation of the average traffic over the 2019 to 2023 period. The state sometimes splits a highway segment into two so we used the 2023 traffic data where possible to make our results match the public 2024 traffic information as closely as possible. However, the state does not collect “Annual Average Daily Traffic” (AADT) numbers for every section of highway every year. In the cases where there wasn’t 2023 data, we used data from 2022 as our baseline. We then took and found exact matches in other years using multiple identification numbers and milepost data to ensure an exact match. The sum of all AADT numbers was then divided by the number of years with exact matches. Most years have at least four years of data that was averaged but a small number use only one year. 
+For traffic numbers we took care to get as accurate a representation of the average traffic over the 2019 to 2023 period. The state sometimes splits a highway segment into two so we used the 2023 traffic data where possible to make our results match the public 2024 traffic information as closely as possible. However, the state does not collect “Annual Average Daily Traffic” (AADT) numbers for every section of highway every year. In the cases where there wasn’t 2023 data, we used data from 2022 as our baseline. We then took and found _exact_ matches in other years using multiple identification numbers and milepost data to ensure an exact match. The sum of all AADT numbers was then divided by the number of years with exact matches. Most years have at least four years of data that was averaged but a small number use only one year. 
 
-For our base crash rate metric, accidents per 100 million vehicle miles traveled (VMT), we used our average traffic number and multiplied it by the length of the road segment to give us a daily vehicle miles traveled. We then multiplied it by 1,826—the total number of days in 5 years, including the leap day in 2020 to get the total estimated vehicle miles traveled in the period that our analysis covered. With that number in hand, we were able to calculate the crash rate using the standard for highway safety numbers. The rate is the key metric we used throughout the story because it allows for a fairer comparison across roads with very different traffic volumes.
+For our base crash rate metric, we used accidents per `100 million vehicle miles traveled (VMT)`, the industry standard prescribed by the US DOT in the [Highway Safety Improvement Manual](https://highways.dot.gov/sites/fhwa.dot.gov/files/2022-06/fhwasa09029.pdf). We used our average traffic number and multiplied it by the length of the road segment to give us a daily vehicle miles traveled. We then multiplied it by 1,826—the total number of days in 5 years, including the leap day in 2020, to get the total estimated vehicle miles traveled in the period that our analysis covered. With that number in hand, we were able to calculate the crash rate as the standard `100 million VMT` metric. The rate is the key metric we used throughout the story because it allows for a direct comparison by nomalizing for traffic and segment length.
 
-The output from our script included both mapping data and summary statistics for each segment, such as total crashes, crash rate, average traffic, the state’s internal road name and the public facing highway name
+The output from `merge_traffic_accidents.py` includes both mapping data and summary statistics for each segment, such as total crashes, crash rate, average traffic, segment length, the state’s internal road name, the public facing highway name and GPS coordinates to map out each road segment. That and the output of `minify_mt_highways.py` are what was used in our maps after being simplified to reduce file size further using [mapshaper's](https://mapshaper.org/) node.js package. 
+
+The `calculate_average_vmt.py` scipt was set up to calculate a variety of statistics to see how different highways compared, the numbers used from that in the piece is the accident rate for all "on-system" highways (MT, US and Interstate) and the accident rates for all highways (including interstates) and just Interstates outside of municipalities, excluding the combined Anaconda-Deer Lodge and Butte-Silver Bow city/county due to most of those counties being rural.
