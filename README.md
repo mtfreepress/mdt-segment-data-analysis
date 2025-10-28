@@ -29,10 +29,10 @@ This script does the following:
 
 ## How to run
 
-Three-step pipeline provided via `run_scripts.sh` which runs
-- Python merge script `merge_traffic_accidents.py`, 
-- Python script to calculate average VMTs outside of municipalities `calculate_average_vmt.py` (note: excludes Anaconda/Deer Lodge and Butte/Silverbow combined municipalities since the municipality covers the entire county which skews results)  
-- Shell script that uses `mapshaper` to simplify GeoJSON files for mapping `simplify_GeoJSON.sh`:
+Three-step pipeline provided via `run_scripts.sh` which runs:
+- `merge_traffic_accidents.py` 
+- `simplify_GeoJSON.sh`:
+- `calculate_average_vmt.py`
 
 ```bash
 # Make sure you have run setup.sh or made this file executable with `chmod +x ./run_scripts.sh` and created a .venv manually
@@ -41,8 +41,7 @@ Three-step pipeline provided via `run_scripts.sh` which runs
 
 #### What the pipeline does:
 - `merge_traffic_accident.py` reads raw input files and writes GeoJSON to `output/merged_data/` (and CSV versions)
-- Calculates VMT values on highways (roads outside of municipalities)
-- `simplify_GeoJSON.sh` reads the GeoJSON files from `output/merged_data/` and produces simplified files at `simplified_data/{base}-{scale}m.geojson` for scales: 1000m, 100m, 10m, 1m
+- `simplify_GeoJSON.sh` reads the GeoJSON files from `output/merged_data/` and uses `mapshaper` to produce simplified files at `simplified_data/{base}-{scale}m.geojson` for scales: 1000m, 100m, 10m, 1m
 - `calculate_average_vmt.py` does length weighted average VMT values for:
 ```
 Note: Ananconda Deer Lodge
