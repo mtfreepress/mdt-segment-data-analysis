@@ -33,7 +33,7 @@ def load_base_segments_2023(base_csv='data/Traffic_Yearly_Counts_2023/TYC_2023.c
 
 
 def calculate_averaged_traffic(base_df, years=[2023, 2022, 2021, 2020, 2019]):
-    # Aggregate TYC_AADT by SEGMENT_KEY across years and compute mean and count
+    # aggregate TYC_AADT by SEGMENT_KEY across years and compute mean and count
     parts = []
     # include base year from base_df
     parts.append(base_df[['SEGMENT_KEY', 'TYC_AADT']].copy())
@@ -63,7 +63,7 @@ def calculate_averaged_traffic(base_df, years=[2023, 2022, 2021, 2020, 2019]):
 
 
 def build_corridor_index(segments_df):
-    # Build numpy-backed per-corridor interval index for fast lookup
+    # build numpy-backed per-corridor interval index for fast lookup
     temp = {}
     for _, r in segments_df.iterrows():
         corr = r['CORR_ID']
@@ -266,7 +266,7 @@ def main(crash_csv='raw-mdt-source-data/2019-2023-crash-data.csv', years=[2023, 
     total_years = len(years)
     df['TOTAL_CRASHES'] = df['SEGMENT_KEY'].map(crash_counts).fillna(0).astype(int)
     df['AVG_CRASHES'] = df['TOTAL_CRASHES'] / total_years
-# 365.20 instead of .25 because of leap years in 5-year span. 
+    # 365.20 instead of .25 because of leap years in 5-year span. 
     df['ANNUAL_VMT'] = df['MILES_DRIVEN'] * 365.20
     df['PER_100M_VMT'] = None
     mask = df['ANNUAL_VMT'].notna() & (df['ANNUAL_VMT'] > 0)

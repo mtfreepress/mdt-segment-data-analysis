@@ -14,9 +14,8 @@ on_system_routes = os.path.join("data", "mt-highways-1m.geojson")
 
 # pick a simplified input from candidates
 def find_simplified_input():
-    # repository structure is fixed; return the single simplified candidate
     return on_system_routes
-# max distance (meters) between sampled simplified point and nearest merged point to consider "close"
+# max distance (meters) between sampled simplified point and nearest merged point to consider "close" to allow for discrepancies between datasets
 MAX_DISTANCE_M = 50.0
 # max bearing difference (degrees) to consider same direction
 MAX_BEARING_DIFF = 30.0

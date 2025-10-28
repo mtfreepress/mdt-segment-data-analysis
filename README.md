@@ -2,10 +2,10 @@
 
 ## Prerequisites
 
-- Python 3.8+ (recommended 3.10/3.11/3.13). Install from: https://www.python.org/
-- npm / Node.js (mapshaper is installed via npm). Install from: https://nodejs.org/
+- Python 3.8+ (recommended 3.10/3.11/3.13). Guide on how to install [here on python.org](https://wiki.python.org/moin/BeginnersGuide/Download)
+- npm / Node.js (mapshaper is installed via npm). The [download page on nodejs.org](https://nodejs.org/en/download) has information on how to install and get started
 
-Notes:
+_Notes:_
 - The project uses a local Python virtual environment (`.venv`) so Python packages are installed inside the project and do not affect your global Python environment.
 - `mapshaper` is installed locally to the repository via `npm install` and used from `node_modules/.bin/mapshaper`. Contributors only need `npm` installed; no global `mapshaper` install is required.
 
@@ -35,7 +35,7 @@ Three-step pipeline provided via `run_scripts.sh` which runs
 - Shell script that uses `mapshaper` to simplify GeoJSON files for mapping `simplify_GeoJSON.sh`:
 
 ```bash
-# Make sure you have run setup.sh or made this executabel with chmod and created a .venv manually
+# Make sure you have run setup.sh or made this executable with `chmod + x` and created a .venv manually
 ./run_scripts.sh
 ```
 
@@ -43,9 +43,21 @@ Three-step pipeline provided via `run_scripts.sh` which runs
 - `merge_traffic_accident.py` reads raw input files and writes GeoJSON to `output/merged_data/` (and CSV versions)
 - Calculates VMT values on highways (roads outside of municipalities)
 - `simplify_GeoJSON.sh` reads the GeoJSON files from `output/merged_data/` and produces simplified files at `simplified_data/{base}-{scale}m.geojson` for scales: 1000m, 100m, 10m, 1m
+- `calculate_average_vmt.py` does length weighted average VMT values for:
+```
+Note: Ananconda Deer Lodge
+1. All on system roads (regardless of in/out municipality)
+2. All roads outside municipality limits
+3. Non-interstates outside municipality limits
+4. Interstates outside municipality limits
+5. All roads inside municipality limits
+6. Non-interstates inside municipality limits
+7. Interstates inside municipality limits
+```
 
-#### Scripts that are not part of the pipeline: 
-- `minify_mt_highways` takes the `data/mt-highways-1m.geojson` (derived from MDT's "On system routes") and removes all segments where there is overlap with the merged highway data to shrink the size of our mapping data so the interactive map loads more quickly. 
+
+#### Scripts that are not part of the pipeline (but were used as part of our mapping/story): 
+- `minify_mt_highways` takes the `data/mt-highways-1m.geojson` (derived from MDT's "On system routes") and removes all segments where there is overlap with the merged highway data to shrink the size of our mapping data so the interactive map loads more quickly. Outputs to `output/mini_highways/mini_mt_highways-1m.json`
 
 ## Project structure
 - `raw_mdt_data/` contains data as it came from MDT directly
